@@ -1,26 +1,52 @@
-import express from 'express'
-import dotenv from 'dotenv'
-import cors from 'cors'
-import morgan from 'morgan'
-import { corsConfig } from './config/cors'
-import { connectDB } from './config/db'
-import authRoutes from './routes/authRoutes'
-import projectRoutes from './routes/projectRoutes'
+  import express from 'express'
+  import dotenv from 'dotenv'
+  import cors from 'cors'
+  import morgan from 'morgan'
+  import path from 'path'
 
-dotenv.config()
-connectDB()
+  import { corsConfig } from './config/cors'
+  import { connectDB } from './config/db'
 
-const app = express()
-app.use(cors(corsConfig))
+  // Rutas existentes
+  import authRoutes from './routes/authRoutes'
+  import projectRoutes from './routes/projectRoutes'
 
-// Logging
-app.use(morgan('dev'))
+  // Nueva ruta para rifas
+  import raffleRoutes from './routes/raffleRoutes'
 
-// Leer datos de formularios
-app.use(express.json())
+  //para Page ADMINISTRADOR
+  import adminRoutes from "./routes/admin";
 
-// Routes
-app.use('/api/auth', authRoutes)
-app.use('/api/projects', projectRoutes)
+  import referidoRoutes from "./routes/referidos";
 
-export default app
+
+
+
+  dotenv.config()
+  connectDB()
+
+  const app = express()
+
+  // Middlewares
+  app.use(cors(corsConfig))
+  app.use(morgan('dev'))
+  app.use(express.json({ limit: '10mb' })) // soporte JSON grande (ej: imágenes base64)
+
+  // Servir archivos si algún día guardas imágenes localmente
+  app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')))
+
+  // Rutas
+  app.use('/api/auth', authRoutes)
+  app.use('/api/projects', projectRoutes)
+  app.use('/api/raffles', raffleRoutes) // 👈 NUEVO endpoint
+  app.use("/api/admin", adminRoutes);
+
+  app.use("/api/referidos", referidoRoutes);
+  // Puerto
+  /*const PORT = Number(process.env.PORT || 4000)
+
+  app.listen(PORT, () => {
+    console.log(`✅ API running on http://localhost:${PORT}`)
+  })*/
+
+  export default app
