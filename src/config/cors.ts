@@ -1,4 +1,4 @@
-import { CorsOptions } from 'cors'
+/*import { CorsOptions } from 'cors'
 
 export const corsConfig: CorsOptions = {
     origin: function(origin, callback) {
@@ -14,7 +14,7 @@ export const corsConfig: CorsOptions = {
             callback(new Error('Error de CORS'))
         }
     }
-}
+}*/
 //import { CorsOptions } from "cors";
 
 /**export const corsConfig: CorsOptions = {
@@ -30,3 +30,26 @@ export const corsConfig: CorsOptions = {
   },
   credentials: true, // para permitir cookies/autenticación si las usas
 };*/
+import { CorsOptions } from "cors";
+
+const whitelist = [
+  process.env.FRONTEND_URL,   // ✅ Frontend en Vercel
+  "http://localhost:5173",    // ✅ Desarrollo local
+];
+
+export const corsConfig: CorsOptions = {
+  origin: function (origin, callback) {
+    // Permitir si no hay origin (ej: Postman o cURL)
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    if (whitelist.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.error("❌ Bloqueado por CORS:", origin);
+      callback(new Error("Error de CORS"));
+    }
+  },
+  credentials: true, // si necesitas enviar cookies / headers de autorización
+};

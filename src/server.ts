@@ -42,11 +42,6 @@
   app.use("/api/admin", adminRoutes);
 
   app.use("/api/referidos", referidoRoutes);
-  // Puerto
-  /*const PORT = Number(process.env.PORT || 4000)
 
-  app.listen(PORT, () => {
-    console.log(`✅ API running on http://localhost:${PORT}`)
-  })*/
 
   export default app
