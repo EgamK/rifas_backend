@@ -103,7 +103,6 @@ export class AuthController {
             res.send(token)
 
         } catch (error) {
-            console.error("Error en login:", error)   // 👈
             res.status(500).json({ error: 'Hubo un error' })
         }
     }
