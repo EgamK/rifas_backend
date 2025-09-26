@@ -60,6 +60,7 @@ export class AuthController {
             await Promise.allSettled([user.save(), tokenExists.deleteOne()])
             res.send('Cuenta confirmada correctamente')
         } catch (error) {
+            
             res.status(500).json({ error: 'Hubo un error' })
         }
     }
@@ -102,6 +103,7 @@ export class AuthController {
             res.send(token)
 
         } catch (error) {
+            console.error("Error en login:", error)   // 👈
             res.status(500).json({ error: 'Hubo un error' })
         }
     }
@@ -248,6 +250,7 @@ export class AuthController {
             await user.save()
             res.send('El Password se modificó correctamente')
         } catch (error) {
+             
             res.status(500).send('Hubo un error')
         }
     } 

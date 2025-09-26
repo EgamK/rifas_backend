@@ -3,7 +3,6 @@
   import cors from 'cors'
   import morgan from 'morgan'
   import path from 'path'
-
   import { corsConfig } from './config/cors'
   import { connectDB } from './config/db'
 
