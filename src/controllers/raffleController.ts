@@ -173,7 +173,19 @@ export const createPurchase = async (req: Request, res: Response) => {
     }
 
     // ✅ asignar números secuenciales
-    const start = raffle.soldTickets + 1;
+    /*const start = raffle.soldTickets + 1; //AQUI DEBE COLOCARSE UN CONTEO TOTAL DE RIFAS REGISTRADAS
+    const tickets = Array.from({ length: q }, (_, i) => start + i);*/
+
+    // ✅ contar todos los boletos ya asignados (sin importar estado)
+    const totalTicketsUsedAgg = await Purchase.aggregate([
+      { $match: { raffleId: raffle._id } },
+      { $group: { _id: null, totalQuantity: { $sum: "$quantity" } } },
+    ]).session(session);
+
+    const totalTicketsUsed = totalTicketsUsedAgg[0]?.totalQuantity || 0;
+
+    // el correlativo empieza después del último ticket asignado
+    const start = totalTicketsUsed + 1;
     const tickets = Array.from({ length: q }, (_, i) => start + i);
 
     // ✅ calcular monto con o sin descuento
