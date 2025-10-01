@@ -13,6 +13,9 @@ export interface IPurchase extends Document {
   status: "PENDING" | "PAID" | "FAILED";
   operationNumber: string;
   codRef?: string; // 👈 referencia opcional
+  // 👇 agrega esto para que TS no se queje
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 const PurchaseSchema: Schema = new Schema(

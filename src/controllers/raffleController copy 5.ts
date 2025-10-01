@@ -5,84 +5,61 @@ import Purchase from "../models/Purchase";
 import Referido from "../models/referidos";
 import cloudinary from "../config/cloudinary";
 import streamifier from "streamifier";
-import { z } from "zod";
+import { z } from "zod"; // ✅ añadido Zod
 import nodemailer from "nodemailer";
 
-// --------------------- Nodemailer transport ---------------------
-// Asegúrate de tener en .env:
-// SMTP_HOST=smtp.zoho.com
-// SMTP_PORT=465
-// SMTP_USER=ventas@rifasganaya.pe
-// SMTP_PASS=tu_password_o_app_password
 
-const smtpHost = process.env.SMTP_HOST || "smtp.zoho.com";
-const smtpPort = Number(process.env.SMTP_PORT || 465);
-const smtpUser = process.env.SMTP_USER || "ventas@rifasganaya.pe";
-const smtpPass = process.env.SMTP_PASS || "";
-
-const transporter = nodemailer.createTransport({
-  host: smtpHost,
-  port: smtpPort,
-  secure: smtpPort === 465, // true para 465
-  auth: {
-    user: smtpUser,
-    pass: smtpPass,
-  },
-});
-
-// utilitaria para enviar correo (no rompe la lógica si falla; registramos error)
-async function sendEmail(to: string, subject: string, text: string) {
-  try {
-    const info = await transporter.sendMail({
-      from: `"Rifas Gana Ya" <${smtpUser}>`,
-      to,
-      subject,
-      text,
-    });
-    return { ok: true, info };
-  } catch (err: any) {
-    console.error("Error enviando email:", err);
-    return { ok: false, error: err?.message ?? String(err) };
-  }
-}
-
-// --------------------- Zod schema ---------------------
+// 📌 Schema de validación con Zod
 const purchaseSchema = z.object({
-  name: z.string().min(1).transform((v) => v.toUpperCase()),
-  dni: z.string().regex(/^[0-9]{8,9}$/, "DNI inválido"),
-  phone: z.string().regex(/^[0-9]{9}$/, "Teléfono inválido"),
+  name: z
+    .string()
+    .min(1, "El nombre es obligatorio")
+    .transform((val) => val.toUpperCase()), // siempre mayúsculas
+  dni: z
+    .string()
+    .regex(/^[0-9]{8,9}$/, "DNI inválido (8 o 9 dígitos)"),
+  phone: z
+    .string()
+    .regex(/^[0-9]{9}$/, "Teléfono inválido (9 dígitos)"),
   email: z.string().email("Email inválido"),
-  quantity: z.coerce.number().min(1),
-  operationNumber: z.string().min(1),
+  quantity: z.coerce.number().min(1, "Debe comprar al menos 1 boleto"),
+  operationNumber: z.string().min(1, "Número de operación obligatorio"),
   codRef: z.string().optional().nullable(),
 });
 
-// --------------------- util cloudinary ---------------------
-const uploadBufferToCloudinary = (buffer: Buffer) => {
+// ======================================
+// Función utilitaria: subir imagen a Cloudinary
+// ======================================
+const uploadBufferToCloudinary = (buffer: Buffer, filename?: string) => {
   return new Promise<any>((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream({ folder: "rifas" }, (err, result) => {
-      if (err) return reject(err);
-      resolve(result);
-    });
-    streamifier.createReadStream(buffer).pipe(stream);
+    const cld_upload_stream = cloudinary.uploader.upload_stream(
+      { folder: "rifas" },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result);
+      }
+    );
+    streamifier.createReadStream(buffer).pipe(cld_upload_stream);
   });
 };
 
-// --------------------- Controllers (sin cambiar diseño ni criterios) ---------------------
-
+// 📌 List raffles
 export const listRaffles = async (_req: Request, res: Response) => {
   const raffles = await Raffle.find().lean();
   res.json(raffles);
 };
 
+// 📌 Get raffle by ID
 export const getRaffle = async (req: Request, res: Response) => {
   const { id } = req.params;
-  if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json({ error: "Id inválido" });
+  if (!mongoose.Types.ObjectId.isValid(id))
+    return res.status(400).json({ error: "Id inválido" });
 
   try {
     const raffle = await Raffle.findById(id).lean();
     if (!raffle) return res.status(404).json({ error: "Rifa no encontrada" });
 
+    // contar compras confirmadas (PAID)
     const confirmedCountAgg = await Purchase.aggregate([
       { $match: { raffleId: raffle._id, status: "PAID" } },
       { $group: { _id: null, totalQuantity: { $sum: "$quantity" } } },
@@ -90,13 +67,17 @@ export const getRaffle = async (req: Request, res: Response) => {
 
     const confirmedTickets = confirmedCountAgg[0]?.totalQuantity || 0;
 
-    res.json({ ...raffle, confirmedTickets });
+    res.json({
+      ...raffle,
+      confirmedTickets,
+    });
   } catch (err) {
     console.error("getRaffle error:", err);
     res.status(500).json({ error: "Error obteniendo rifa" });
   }
 };
 
+// 📌 Create raffle (Admin)
 export const createRaffle = async (req: Request, res: Response) => {
   try {
     const { title, description, ticketPrice, totalTickets } = req.body;
@@ -104,7 +85,10 @@ export const createRaffle = async (req: Request, res: Response) => {
 
     let photos: string[] = [];
     if (files && files.length > 0) {
-      const uploads = files.map((f) => uploadBufferToCloudinary(f.buffer));
+      const uploads = [];
+      for (const f of files) {
+        uploads.push(uploadBufferToCloudinary(f.buffer));
+      }
       const results = await Promise.all(uploads);
       photos = results.map((r) => r.secure_url);
     }
@@ -119,24 +103,31 @@ export const createRaffle = async (req: Request, res: Response) => {
 
     res.status(201).json(raffle);
   } catch (err) {
-    console.error("createRaffle error:", err);
+    console.error(err);
     res.status(500).json({ error: "Error creando rifa" });
   }
 };
 
+// 📌 Create purchase (guest)
 export const createPurchase = async (req: Request, res: Response) => {
-  const { id } = req.params;
+  const { id } = req.params; // raffle id
+
+  // ✅ validación con Zod antes de procesar
   let validated;
   try {
     validated = purchaseSchema.parse(req.body);
   } catch (error: any) {
-    return res.status(400).json({ error: "Validación fallida", details: error.errors });
+    return res.status(400).json({
+      error: "Validación fallida",
+      details: error.errors,
+    });
   }
 
   const { name, dni, phone, email, quantity, operationNumber, codRef } = validated;
   const q = Number(quantity);
 
-  if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json({ error: "Id inválido" });
+  if (!mongoose.Types.ObjectId.isValid(id))
+    return res.status(400).json({ error: "Id inválido" });
 
   const session = await mongoose.startSession();
   session.startTransaction();
@@ -147,21 +138,23 @@ export const createPurchase = async (req: Request, res: Response) => {
       return res.status(404).json({ error: "Rifa no encontrada" });
     }
 
-    // validar operationNumber único
+    // ✅ validar si operationNumber ya existe
     const existingOp = await Purchase.findOne({ operationNumber }).session(session);
     if (existingOp) {
       await session.abortTransaction();
       return res.status(400).json({ field: "operationNumber", error: "Número de operación ya registrado" });
     }
 
-    // validar referido (si aplica)
+    // ✅ validar referencia (si viene en la compra)
     let codRefToSave: string | null = null;
+    let discount = 0;
     if (codRef && codRef.trim() !== "") {
       const ref = await Referido.findOne({ codRef }).session(session);
       if (!ref) {
         await session.abortTransaction();
         return res.status(400).json({ error: "Código de referencia inválido" });
       }
+
       const now = new Date();
       if (ref.startAt && ref.startAt > now) {
         await session.abortTransaction();
@@ -171,16 +164,21 @@ export const createPurchase = async (req: Request, res: Response) => {
         await session.abortTransaction();
         return res.status(400).json({ error: "Código expirado" });
       }
+
       codRefToSave = ref.codRef;
     }
 
-    // verificar disponibilidad
+    // ✅ verificar disponibilidad
     if (raffle.soldTickets + q > raffle.totalTickets) {
       await session.abortTransaction();
       return res.status(400).json({ error: "No hay suficientes tickets disponibles" });
     }
 
-    // contar todos los boletos ya asignados (sin importar estado)
+    // ✅ asignar números secuenciales
+    /*const start = raffle.soldTickets + 1; //AQUI DEBE COLOCARSE UN CONTEO TOTAL DE RIFAS REGISTRADAS
+    const tickets = Array.from({ length: q }, (_, i) => start + i);*/
+
+    // ✅ contar todos los boletos ya asignados (sin importar estado)
     const totalTicketsUsedAgg = await Purchase.aggregate([
       { $match: { raffleId: raffle._id } },
       { $group: { _id: null, totalQuantity: { $sum: "$quantity" } } },
@@ -188,19 +186,26 @@ export const createPurchase = async (req: Request, res: Response) => {
 
     const totalTicketsUsed = totalTicketsUsedAgg[0]?.totalQuantity || 0;
 
-    // correlativo inicia en 1000 + último ticket asignado
+    // el correlativo empieza de 1000 +  último ticket asignado 
     const start = 1000 + totalTicketsUsed + 1;
 
-    const firstDniDigit = String(dni).charAt(0);
-    const lastOpDigit = String(operationNumber).charAt(String(operationNumber).length - 1);
+    // ✅ obtenemos primer dígito del DNI y último del nro. operación
+    const firstDniDigit = dni.charAt(0);
+    const lastOpDigit = operationNumber.charAt(operationNumber.length - 1);
 
+    // ✅ generamos tickets únicos
     const tickets = Array.from({ length: q }, (_, i) => {
       const correlativo = start + i;
       return `${firstDniDigit}${lastOpDigit}${correlativo}`;
     });
 
+    // ✅ calcular monto con o sin descuento
     const baseAmount = q * raffle.ticketPrice;
-    const discount = codRefToSave ? Number((baseAmount * 0.12).toFixed(2)) : 0;
+    if (codRefToSave) {
+      discount = Number((baseAmount * 0.12).toFixed(2));
+    } else {
+      discount = 0;
+    }
     const finalAmount = Number((baseAmount - discount).toFixed(2));
 
     const [purchase] = await Purchase.create(
@@ -236,6 +241,7 @@ export const createPurchase = async (req: Request, res: Response) => {
     await session.abortTransaction();
     session.endSession();
     console.error("createPurchase error:", err);
+
     if (err.code === 11000 && err.keyPattern?.operationNumber) {
       return res.status(400).json({ field: "operationNumber", error: "Número de operación ya registrado" });
     }
@@ -243,9 +249,12 @@ export const createPurchase = async (req: Request, res: Response) => {
   }
 };
 
+// 📌 List all purchases (admin)
 export const listPurchases = async (_req: Request, res: Response) => {
   try {
-    const purchases = await Purchase.find().populate("raffleId", "title").lean();
+    const purchases = await Purchase.find()
+      .populate("raffleId", "title")
+      .lean();
 
     const formatted = purchases.map((p: any) => ({
       _id: p._id,
@@ -267,15 +276,18 @@ export const listPurchases = async (_req: Request, res: Response) => {
 
     res.json(formatted);
   } catch (err) {
-    console.error("listPurchases error:", err);
+    console.error(err);
     res.status(500).json({ error: "Error listando compras" });
   }
 };
 
-// Confirm purchase (admin) -> además envía correo y devuelve mensaje
+// 📌 Confirm purchase (admin)
 export const confirmPurchase = async (req: Request, res: Response) => {
   const { id } = req.params;
-  if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json({ error: "Id inválido" });
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ error: "Id inválido" });
+  }
 
   try {
     const purchase = await Purchase.findById(id);
@@ -292,43 +304,20 @@ export const confirmPurchase = async (req: Request, res: Response) => {
       }
     }
 
-    // Construir mensaje profesional (y legible) para correo y WhatsApp
-    const ticketsList = Array.isArray(purchase.tickets) ? purchase.tickets.join(", ") : String(purchase.tickets);
-    const raffle = await Raffle.findById(purchase.raffleId);
-    const emailMessage = `Estimado/a: ${purchase.name}, 
-    
-      ✅ Su pago ha sido confirmado con éxito. 
-      📌 Usted ya participa en la rifa: ${raffle?.title || "Sin título"}.
-      🎟️ Números de ticket: ${purchase.tickets.length > 0 ? purchase.tickets.join(", ") : "-"}. 
-      💵 Monto pagado: S/. ${purchase.amount}
-      📅 Fecha de registro: ${new Date(purchase.createdAt).toLocaleDateString("es-PE")}
-
-      🎉 ¡Gracias por confiar en Rifas Gana Ya! 🍀
-      Te deseamos mucha suerte en el sorteo. Muy pronto te avisaremos la fecha.
-
-      Atte. Rifas Gana Ya
-      📞 Cel: 976476422
-      ✉️ ventas@rifasganaya.pe`;
-    // Enviar correo (no hacemos que falle la petición si email falla; lo registramos)
-    const sendResult = await sendEmail(purchase.email, "Confirmación de Compra - Rifas Gana Ya", emailMessage);
-
-    return res.json({
-      message: "Compra confirmada",
-      purchase,
-      emailSent: sendResult.ok,
-      emailError: sendResult.ok ? null : sendResult.error,
-      emailMessage,
-    });
+    res.json({ message: "Compra confirmada", purchase });
   } catch (err) {
-    console.error("confirmPurchase error:", err);
+    console.error(err);
     res.status(500).json({ error: "Error confirmando compra" });
   }
 };
 
-// Reject purchase (admin) -> envía correo notificando rechazo
+// 📌 Reject purchase (admin)
 export const rejectPurchase = async (req: Request, res: Response) => {
   const { id } = req.params;
-  if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json({ error: "Id inválido" });
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ error: "Id inválido" });
+  }
 
   try {
     const purchase = await Purchase.findById(id);
@@ -337,7 +326,8 @@ export const rejectPurchase = async (req: Request, res: Response) => {
     if (purchase.status === "PAID") {
       const raffle = await Raffle.findById(purchase.raffleId);
       if (raffle) {
-        raffle.soldTickets = Math.max(0, raffle.soldTickets - purchase.quantity);
+        raffle.soldTickets -= purchase.quantity;
+        if (raffle.soldTickets < 0) raffle.soldTickets = 0;
         await raffle.save();
       }
     }
@@ -345,39 +335,21 @@ export const rejectPurchase = async (req: Request, res: Response) => {
     purchase.status = "FAILED";
     await purchase.save();
 
-    // Construir mensaje de rechazo
-    const raffle = await Raffle.findById(purchase.raffleId);
-    const emailMessage = `Estimado/a ${purchase.name},
-
-      ⚠️ Su compra en la rifa: ${raffle?.title || "Sin título"} no ha podido ser confirmada. 
-      El motivo es una inconsistencia en el número de operación o en el monto del pago.
-
-      Le pedimos que por favor verifique el pago y registre el número de operación de manera correcta.
-
-      Atte. Rifas Gana Ya
-      📞 Cel: 976476422
-      ✉️ ventas@rifasganaya.pe`;
-
-    const sendResult = await sendEmail(purchase.email, "Compra Rechazada - Rifas Gana Ya", emailMessage);
-
-    return res.json({
-      message: "Compra rechazada",
-      purchase,
-      emailSent: sendResult.ok,
-      emailError: sendResult.ok ? null : sendResult.error,
-      emailMessage,
-    });
+    res.json({ message: "Compra rechazada", purchase });
   } catch (err) {
-    console.error("rejectPurchase error:", err);
+    console.error(err);
     res.status(500).json({ error: "Error rechazando compra" });
   }
 };
 
+// 📌 Validate referido (para frontend)
 export const validateReferido = async (req: Request, res: Response) => {
   const { code } = req.params;
   try {
     const ref = await Referido.findOne({ codRef: code });
-    if (!ref) return res.json({ valid: false });
+    if (!ref) {
+      return res.json({ valid: false });
+    }
     const now = new Date();
     if ((ref.startAt && ref.startAt > now) || (ref.endAt && ref.endAt < now)) {
       return res.json({ valid: false });

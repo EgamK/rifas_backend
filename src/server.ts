@@ -17,7 +17,7 @@
   import adminRoutes from "./routes/admin";
 
   import referidoRoutes from "./routes/referidos";
-
+  import rafflePurchaseRoutes from "./routes/rafflePurchaseRoutes";
 
 
 
@@ -41,6 +41,7 @@
   app.use("/api/admin", adminRoutes);
 
   app.use("/api/referidos", referidoRoutes);
+  app.use("/api/purchases", rafflePurchaseRoutes);
 
 
   export default app
