@@ -34,6 +34,7 @@ import { CorsOptions } from "cors";
 
 const whitelist = [
   process.env.FRONTEND_URL,   // ✅ Frontend en Vercel
+  "https://www.rifasganaya.pe",
   "http://localhost:5173",    // ✅ Desarrollo local
 ];
 
