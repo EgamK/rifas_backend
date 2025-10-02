@@ -35,7 +35,7 @@ import mongoose, { Schema, Document } from "mongoose";
 export interface IRafflePurchase extends Document {
   raffleId: string;
   name: string; // nombre completo
-  dni: number;
+  dni: string;
   operationNumber: string;
   tickets: number[]; // array de tickets
   status: string;
@@ -46,8 +46,8 @@ const rafflePurchaseSchema = new Schema<IRafflePurchase>(
   {
     raffleId: { type: String, required: true },
     name: { type: String, required: true }, // ejemplo: "Edgard Abanto Machuca"
-    //dni: { type: String, required: true },
-    dni: { type: Number, required: true },
+    dni: { type: String, required: true },
+    //dni: { type: Number, required: true },
     operationNumber: { type: String, required: true },
     tickets: [{ type: Number }], // se guarda como array
     status: { type: String, default: "PENDING" },

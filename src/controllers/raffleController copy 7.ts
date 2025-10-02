@@ -130,29 +130,25 @@ export const createPurchase = async (req: Request, res: Response) => {
   const { name, dni, phone, email, quantity, operationNumber, codRef } = validated;
   const q = Number(quantity);
 
-  if (!mongoose.Types.ObjectId.isValid(id)) {
-    return res.status(400).json({ error: "Id inválido" });
-  }
+  if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json({ error: "Id inválido" });
 
   const session = await mongoose.startSession();
   session.startTransaction();
-
   try {
-    // ✅ validar rifa
-    const raffleExist = await Raffle.findById(id).session(session);
-    if (!raffleExist) {
+    const raffle = await Raffle.findById(id).session(session);
+    if (!raffle) {
       await session.abortTransaction();
       return res.status(404).json({ error: "Rifa no encontrada" });
     }
 
-    // ✅ validar número de operación único
+    // validar operationNumber único
     const existingOp = await Purchase.findOne({ operationNumber }).session(session);
     if (existingOp) {
       await session.abortTransaction();
       return res.status(400).json({ field: "operationNumber", error: "Número de operación ya registrado" });
     }
 
-    // ✅ validar referido (si aplica)
+    // validar referido (si aplica)
     let codRefToSave: string | null = null;
     if (codRef && codRef.trim() !== "") {
       const ref = await Referido.findOne({ codRef }).session(session);
@@ -172,35 +168,35 @@ export const createPurchase = async (req: Request, res: Response) => {
       codRefToSave = ref.codRef;
     }
 
-    // ✅ actualizar soldTickets de forma atómica
-    const raffle = await Raffle.findOneAndUpdate(
-      { _id: id, soldTickets: { $lte: raffleExist.totalTickets - q } },
-      { $inc: { soldTickets: q } },
-      { new: true, session }
-    );
-
-    if (!raffle) {
+    // verificar disponibilidad
+    if (raffle.soldTickets + q > raffle.totalTickets) {
       await session.abortTransaction();
       return res.status(400).json({ error: "No hay suficientes tickets disponibles" });
     }
 
-    // ✅ generar correlativos seguros
-    const start = 1000 + (raffle.soldTickets - q) + 1;
+    // contar todos los boletos ya asignados (sin importar estado)
+    const totalTicketsUsedAgg = await Purchase.aggregate([
+      { $match: { raffleId: raffle._id } },
+      { $group: { _id: null, totalQuantity: { $sum: "$quantity" } } },
+    ]).session(session);
+
+    const totalTicketsUsed = totalTicketsUsedAgg[0]?.totalQuantity || 0;
+
+    // correlativo inicia en 1000 + último ticket asignado
+    const start = 1000 + totalTicketsUsed + 1;
 
     const firstDniDigit = String(dni).charAt(0);
-    const lastOpDigit = String(operationNumber).slice(-1);
+    const lastOpDigit = String(operationNumber).charAt(String(operationNumber).length - 1);
 
     const tickets = Array.from({ length: q }, (_, i) => {
       const correlativo = start + i;
       return `${firstDniDigit}${lastOpDigit}${correlativo}`;
     });
 
-    // ✅ calcular montos
     const baseAmount = q * raffle.ticketPrice;
     const discount = codRefToSave ? Number((baseAmount * 0.12).toFixed(2)) : 0;
     const finalAmount = Number((baseAmount - discount).toFixed(2));
 
-    // ✅ registrar compra
     const [purchase] = await Purchase.create(
       [
         {
@@ -240,7 +236,6 @@ export const createPurchase = async (req: Request, res: Response) => {
     return res.status(500).json({ error: "Error creando compra" });
   }
 };
-
 
 export const listPurchases = async (_req: Request, res: Response) => {
   try {

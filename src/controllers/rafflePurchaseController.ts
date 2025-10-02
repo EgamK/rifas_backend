@@ -64,7 +64,7 @@ export const searchPurchases = async (req: Request, res: Response) => {
           "FALLIDO - Número de operación inválido o el monto es menor al costo de la rifa.";
       }
 
-      return r.tickets.map((ticket: number) => ({
+      return r.tickets.map((ticket: string) => ({
         nombreCompleto: `${primerNombre} ${primerApellido}`.trim(),
         numeroRifa: ticket,
         numeroOperacion: r.operationNumber,

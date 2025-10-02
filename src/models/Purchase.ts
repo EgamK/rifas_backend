@@ -4,12 +4,12 @@ import { string } from "zod";
 export interface IPurchase extends Document {
   raffleId: mongoose.Types.ObjectId;
   name: string;
-  dni: number;
+  dni: string;
   phone: number;
   email: string;
   quantity: number;
   amount: number;
-  tickets: number[];
+  tickets: string[];
   method: string;
   status: "PENDING" | "PAID" | "FAILED";
   operationNumber: string;
@@ -27,12 +27,12 @@ const PurchaseSchema: Schema = new Schema(
       required: true,
     },
     name: { type: String, required: true, trim: true },
-    dni: { type: Number, required: true },
+    dni: { type: String, required: true },
     phone: { type: Number, required: true },
     email: { type: String, required: true, trim: true },
     quantity: { type: Number, required: true },
     amount: { type: Number, required: true },
-    tickets: [{ type: Number, required: true }],
+    tickets: [{ type: String, required: true }],
     method: { type: String, required: true }, // ej: yape, plin, etc.
     status: {
       type: String,
