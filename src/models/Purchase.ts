@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from "mongoose";
+import { string } from "zod";
 
 export interface IPurchase extends Document {
   raffleId: mongoose.Types.ObjectId;
@@ -47,7 +48,8 @@ const PurchaseSchema: Schema = new Schema(
     },
     codRef: {
       type: String,
-      trim: true,
+      ref: "Referido",
+      required: false
     },
   },
   { timestamps: true }

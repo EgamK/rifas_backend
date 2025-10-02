@@ -7,7 +7,6 @@ import cloudinary from "../config/cloudinary";
 import streamifier from "streamifier";
 import { z } from "zod";
 import nodemailer from "nodemailer";
-import { Types } from "mongoose";
 
 const smtpHost = process.env.SMTP_HOST || "smtp.zoho.com";
 const smtpPort = Number(process.env.SMTP_PORT || 465);
@@ -237,9 +236,9 @@ export const createPurchase = async (req: Request, res: Response) => {
   }
 };
 
-/*export const listPurchases = async (_req: Request, res: Response) => {
+export const listPurchases = async (_req: Request, res: Response) => {
   try {
-    const purchases = await Purchase.find().populate("raffleId", "title").populate("codRef", "name email codRef").lean();
+    const purchases = await Purchase.find().populate("raffleId", "title").populate("codRef", "name email").lean();
     
     const formatted = purchases.map((p: any) => ({
       _id: p._id,
@@ -254,12 +253,11 @@ export const createPurchase = async (req: Request, res: Response) => {
       method: p.method,
       status: p.status,
       operationNumber: p.operationNumber,
-      codRef: p.codRef?.codRef || null, // 👈 recuperamos el código
-      nameRef: p.codRef?.name || null,
-      emailRef: p.codRef?.email || null,
+      codRef: p.codRef || null,
       createdAt: p.createdAt,
       updatedAt: p.updatedAt,
-      
+      nameRef: p.codRef?.name || null,
+      emailRef: p.codRef?.email || null,
     }));
 
     res.json(formatted);
@@ -267,78 +265,17 @@ export const createPurchase = async (req: Request, res: Response) => {
     console.error("listPurchases error:", err);
     res.status(500).json({ error: "Error listando compras" });
   }
-};*/
-
-export const listPurchases = async (_req: Request, res: Response) => {
-  try {
-    const purchases = await Purchase.aggregate([
-      // traer rifa
-      {
-        $lookup: {
-          from: "raffles",
-          localField: "raffleId",
-          foreignField: "_id",
-          as: "raffle",
-        },
-      },
-      { $unwind: { path: "$raffle", preserveNullAndEmptyArrays: true } },
-
-      // traer referido por el campo codRef (string)
-      {
-        $lookup: {
-          from: "referidos", // colección de Referido
-          localField: "codRef",
-          foreignField: "codRef",
-          as: "referido",
-        },
-      },
-      { $unwind: { path: "$referido", preserveNullAndEmptyArrays: true } },
-
-      // proyectar sólo lo que necesitamos
-      {
-        $project: {
-          raffleTitle: "$raffle.title",
-          name: 1,
-          dni: 1,
-          phone: 1,
-          email2: 1,
-          quantity: 1,
-          amount: 1,
-          tickets: 1,
-          method: 1,
-          status: 1,
-          operationNumber: 1,
-          codRef: 1,
-          nameRef: "$referido.name",
-          emailRef: "$referido.email",
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      },
-      { $sort: { createdAt: -1 } },
-    ]);
-
-    // devuelve el resultado tal cual (ya tiene las propiedades esperadas)
-    res.json(purchases);
-  } catch (err) {
-    console.error("listPurchases error:", err);
-    res.status(500).json({ error: "Error listando compras" });
-  }
 };
-
 
 // Confirm purchase (admin) -> además envía correo y devuelve mensaje
 export const confirmPurchase = async (req: Request, res: Response) => {
   const { id } = req.params;
-  if (!mongoose.Types.ObjectId.isValid(id)) {
-    return res.status(400).json({ error: "Id inválido" });
-  }
+  if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json({ error: "Id inválido" });
 
   try {
     const purchase = await Purchase.findById(id);
     if (!purchase) return res.status(404).json({ error: "Compra no encontrada" });
 
-    // ✅ Cambiar estado a PAID si aún no está confirmado
     if (purchase.status !== "PAID") {
       purchase.status = "PAID";
       await purchase.save();
@@ -350,71 +287,32 @@ export const confirmPurchase = async (req: Request, res: Response) => {
       }
     }
 
-    // ✅ Buscar rifa
+    // Construir mensaje profesional (y legible) para correo y WhatsApp
+    const ticketsList = Array.isArray(purchase.tickets) ? purchase.tickets.join(", ") : String(purchase.tickets);
     const raffle = await Raffle.findById(purchase.raffleId);
-
-    // ✅ Mensaje para cliente
     const emailMessage = `Hola, ${purchase.name}, 
     
-✅ Su pago ha sido confirmado con éxito. 
-📌 Usted ya participa en la rifa: ${raffle?.title || "Sin título"}.
-🎟️ Números de ticket: ${purchase.tickets.length > 0 ? purchase.tickets.join(", ") : "-"}.
-💵 Monto pagado: S/. ${purchase.amount}
-📅 Fecha de registro: ${new Date(purchase.createdAt).toLocaleDateString("es-PE")}
+      ✅ Su pago ha sido confirmado con éxito. 
+      📌 Usted ya participa en la rifa: ${raffle?.title || "Sin título"}.
+      🎟️ Números de ticket: ${purchase.tickets.length > 0 ? purchase.tickets.join(", ") : "-"}. 
+      💵 Monto pagado: S/. ${purchase.amount}
+      📅 Fecha de registro: ${new Date(purchase.createdAt).toLocaleDateString("es-PE")}
 
-🎉 ¡Gracias por confiar en Rifas Gana Ya! 🍀
-Te deseamos mucha suerte en el sorteo. Muy pronto te avisaremos la fecha.
+      🎉 ¡Gracias por confiar en Rifas Gana Ya! 🍀
+      Te deseamos mucha suerte en el sorteo. Muy pronto te avisaremos la fecha.
 
-Atte. Rifas Gana Ya
-📞 Cel: 976476422
-✉️ ventas@rifasganaya.pe`;
-
-    // ✅ Buscar referido (IMPORTANTE: buscar por codRef, no por _id)
-    let emailMessageRef: string | null = null;
-    let sendResultRef: any = null;
-
-    if (purchase.codRef) {
-      const ref = await Referido.findOne({ codRef: purchase.codRef });
-
-      if (ref) {
-        emailMessageRef = `Felicidades!! ${ref.name}, 
-        
-El cliente ${purchase.name} ha comprado boletos de rifa usando tu código de referido y por ello estás acumulando el 18% del valor de esta venta.
-📌 El cliente participará en el sorteo de: ${raffle?.title || "Sin título"}.
-🎟️ Cantidad de ticket: ${purchase.quantity}.
-📅 Fecha de registro: ${new Date(purchase.createdAt).toLocaleDateString("es-PE")}
-
-🎉 ¡Gracias por confiar en Rifas Gana Ya! 🍀
-    Pronto serás recompensado.
-
-Atte. Rifas Gana Ya
-📞 Cel: 976476422
-✉️ ventas@rifasganaya.pe`;
-
-        sendResultRef = await sendEmail(
-          ref.email,
-          "Confirmación de Compra - Rifas Gana Ya (Referido)",
-          emailMessageRef
-        );
-      }
-    }
-
-    // ✅ Enviar correo al cliente
-    const sendResult = await sendEmail(
-      purchase.email,
-      "Confirmación de Compra - Rifas Gana Ya",
-      emailMessage
-    );
+      Atte. Rifas Gana Ya
+      📞 Cel: 976476422
+      ✉️ ventas@rifasganaya.pe`;
+    // Enviar correo (no hacemos que falle la petición si email falla; lo registramos)
+    const sendResult = await sendEmail(purchase.email, "Confirmación de Compra - Rifas Gana Ya", emailMessage);
 
     return res.json({
       message: "Compra confirmada",
       purchase,
       emailSent: sendResult.ok,
-      emailSentRef: sendResultRef ? sendResultRef.ok : null,
       emailError: sendResult.ok ? null : sendResult.error,
-      emailErrorRef: sendResultRef && !sendResultRef.ok ? sendResultRef.error : null,
       emailMessage,
-      emailMessageRef,
     });
   } catch (err) {
     console.error("confirmPurchase error:", err);
@@ -422,19 +320,15 @@ Atte. Rifas Gana Ya
   }
 };
 
-
 // Reject purchase (admin) -> envía correo notificando rechazo
 export const rejectPurchase = async (req: Request, res: Response) => {
   const { id } = req.params;
-  if (!mongoose.Types.ObjectId.isValid(id)) {
-    return res.status(400).json({ error: "Id inválido" });
-  }
+  if (!mongoose.Types.ObjectId.isValid(id)) return res.status(400).json({ error: "Id inválido" });
 
   try {
     const purchase = await Purchase.findById(id);
     if (!purchase) return res.status(404).json({ error: "Compra no encontrada" });
 
-    // ✅ Si ya estaba confirmada, devolvemos los tickets
     if (purchase.status === "PAID") {
       const raffle = await Raffle.findById(purchase.raffleId);
       if (raffle) {
@@ -443,74 +337,36 @@ export const rejectPurchase = async (req: Request, res: Response) => {
       }
     }
 
-    // ✅ Cambiar estado a FAILED
     purchase.status = "FAILED";
     await purchase.save();
 
-    // ✅ Buscar rifa para el mensaje
+    // Construir mensaje de rechazo
     const raffle = await Raffle.findById(purchase.raffleId);
-
-    // ✅ Mensaje al cliente
     const emailMessage = `Estimado/a ${purchase.name},
-     
-      Tu compra de boletos para la rifa ${raffle?.title || "Sin título"} no pudo ser procesada porque encontramos inconsistencias en el número de operación y/o en los montos de pago.
 
-      No te preocupes, puedes revisarlo y volver a intentarlo. Si necesitas ayuda, nuestro equipo está listo para apoyarte.
+      ⚠️ Su compra en la rifa: ${raffle?.title || "Sin título"} no ha podido ser confirmada. 
+      El motivo es una inconsistencia en el número de operación o en el monto del pago.
+
+      Le pedimos que por favor verifique el pago y registre el número de operación de manera correcta.
 
       Atte. Rifas Gana Ya
       📞 Cel: 976476422
       ✉️ ventas@rifasganaya.pe`;
 
-    const sendResult = await sendEmail(
-      purchase.email,
-      "Compra Rechazada - Rifas Gana Ya",
-      emailMessage
-    );
-
-    // ✅ Notificación al referido (si existiera)
-    let emailMessageRef: string | null = null;
-    let sendResultRef: any = null;
-
-    if (purchase.codRef) {
-      const ref = await Referido.findOne({ codRef: purchase.codRef });
-
-      if (ref) {
-        emailMessageRef = `Hola ${ref.name},
-
-        Lamentamos informarte que la compra de boletos para la rifa: ${raffle?.title || "Sin título"}, fue rechazada debido a inconsistencias detectadas en el número de operación y/o en los montos de pago.
-        Cliente: ${purchase.name}
-        🎟️ Cantidad de ticket: ${purchase.quantity}.
-        📅 Fecha de registro: ${new Date(purchase.createdAt).toLocaleDateString("es-PE")}
-
-
-        Atte. Rifas Gana Ya
-        📞 Cel: 976476422
-        ✉️ ventas@rifasganaya.pe`;
-
-        sendResultRef = await sendEmail(
-          ref.email,
-          "Compra Rechazada de tu referido - Rifas Gana Ya",
-          emailMessageRef
-        );
-      }
-    }
+    const sendResult = await sendEmail(purchase.email, "Compra Rechazada - Rifas Gana Ya", emailMessage);
 
     return res.json({
       message: "Compra rechazada",
       purchase,
       emailSent: sendResult.ok,
-      emailSentRef: sendResultRef ? sendResultRef.ok : null,
       emailError: sendResult.ok ? null : sendResult.error,
-      emailErrorRef: sendResultRef && !sendResultRef.ok ? sendResultRef.error : null,
       emailMessage,
-      emailMessageRef,
     });
   } catch (err) {
     console.error("rejectPurchase error:", err);
     res.status(500).json({ error: "Error rechazando compra" });
   }
 };
-
 
 export const validateReferido = async (req: Request, res: Response) => {
   const { code } = req.params;

@@ -17,6 +17,7 @@ const ReferidoSchema: Schema = new Schema(
     telefono: { type: Number, required: true },
     email: { type: String, required: true, trim: true },
     codRef: { type: String, required: true, unique: true }, // 👈 importante: único
+    //codRef: {type: mongoose.Schema.Types.ObjectId, ref: "Referido", required: false},
     startAt: Date,
     endAt: Date,
   },
