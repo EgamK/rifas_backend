@@ -242,6 +242,8 @@ export const createPurchase = async (req: Request, res: Response) => {
   }
 };
 
+
+
 export const listPurchases = async (_req: Request, res: Response) => {
   try {
     const purchases = await Purchase.aggregate([

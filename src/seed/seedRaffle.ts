@@ -40,8 +40,8 @@ async function run() {
   }
 
   const raffle = await Raffle.create({
-    title: "Toyota Corolla 2018 - Rifas EGAM",
-    description: "Rifa de prueba. Compra tu ticket y participa por este carro.",
+    title: "Suzuki New Vitara GL LUX6 – 2019 / Moto Scooters / iPhone",
+    description: "Caracteristicas Del Premio Mayor: 🚗 Motor 1.6 cc, ⚙️ Transmisión Automática, 🎨 C Anaranjado/Negro, ❄️ Aire Acondicionado, 🛣️ Control de Crucero, 📷 Cámara de Retroceso y 🛡️ Sensores de Seguridad.",
     ticketPrice: 20,
     totalTickets: 1000,
     soldTickets: 0,
