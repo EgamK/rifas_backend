@@ -30,6 +30,7 @@ export const corsConfig: CorsOptions = {
   },
   credentials: true, // para permitir cookies/autenticación si las usas
 };*/
+  //uptask_backend/src/config/cors.ts
 import { CorsOptions } from "cors";
 
 const whitelist = [

@@ -1,3 +1,4 @@
+  //uptask_backend/src/server.ts
   import express from 'express'
   import dotenv from 'dotenv'
   import cors from 'cors'
@@ -18,6 +19,7 @@
 
   import referidoRoutes from "./routes/referidos";
   import rafflePurchaseRoutes from "./routes/rafflePurchaseRoutes";
+  import { originGuard } from "./middleware/originGuard"; // ⬅️ Importar el middleware
 
 
 
@@ -37,7 +39,7 @@
   // Rutas
   app.use('/api/auth', authRoutes)
   app.use('/api/projects', projectRoutes)
-  app.use('/api/raffles', raffleRoutes) // 👈 NUEVO endpoint
+  app.use('/api/raffles',originGuard, raffleRoutes) // 👈 NUEVO endpoint
   app.use("/api/admin", adminRoutes);
 
   app.use("/api/referidos", referidoRoutes);

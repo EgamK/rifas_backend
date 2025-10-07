@@ -1,3 +1,4 @@
+//uptask_backend/src/config/middleware/auth.ts
 import { Request, Response, NextFunction } from 'express'
 import jwt from 'jsonwebtoken'
 import User, { IUser } from '../models/User'
