@@ -184,10 +184,21 @@ export const createPurchase = async (req: Request, res: Response) => {
     }
 
     // ✅ contar todas las compras (para correlativos, aunque estén pendientes/rechazadas)
-    const totalCount = await Purchase.countDocuments({ raffleId: id }).session(session);
+    //const totalCount = await Purchase.countDocuments({ raffleId: id }).session(session);
 
     // ✅ generar correlativos seguros
-    const start = 1000 + totalCount + 1;
+    //const start = 1000 + totalCount + 1;
+
+    // ✅ contar el total de tickets generados hasta ahora (más preciso)
+    const totalTicketsUsedAgg = await Purchase.aggregate([
+      { $match: { raffleId: new mongoose.Types.ObjectId(id) } },
+      { $group: { _id: null, total: { $sum: "$quantity" } } },
+    ]).session(session);
+
+    const totalTicketsUsed = totalTicketsUsedAgg[0]?.total || 0;
+
+    // ✅ generar correlativos seguros
+    const start = 1000 + totalTicketsUsed + 1;
     const firstDniDigit = String(dni).charAt(0);
     const lastOpDigit = String(operationNumber).slice(-1);
 
